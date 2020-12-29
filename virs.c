@@ -1,0 +1,263 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <linux/clk.h>
+#include <linux/kthread.h>
+#include <linux/console.h>
+#include <linux/delay.h>
+#include <linux/dma-direction.h>
+#include <linux/dmaengine.h>
+#include <linux/dma-mapping.h>
+#include <linux/io.h>
+#include <linux/iopoll.h>
+#include <linux/irq.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/of_platform.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
+#include <linux/pm_wakeirq.h>
+#include <linux/serial_core.h>
+#include <linux/serial.h>
+#include <linux/spinlock.h>
+#include <linux/sysrq.h>
+#include <linux/tty_flip.h>
+#include <linux/tty.h>
+
+#define PORT_VIRS 188
+
+
+struct platform_device *pdev0;
+struct platform_device *pdev1;
+static struct uart_port port0;
+static struct uart_port port1;
+struct work_struct work0;
+struct work_struct work1;
+
+static unsigned int tx_empty(struct uart_port *port)
+{
+    struct circ_buf *xmit = &port->state->xmit;
+
+    return uart_circ_empty(xmit);
+}
+
+static void set_mctrl(struct uart_port *port, unsigned int mctrl)
+{
+}
+
+static unsigned int get_mctrl(struct uart_port *port)
+{
+	/* This routine is used to get signals of: DCD, DSR, RI, and CTS */
+	return TIOCM_CAR | TIOCM_DSR | TIOCM_CTS;
+}
+
+/* Transmit stop */
+static void stop_tx(struct uart_port *port)
+{
+}
+
+/* There are probably characters waiting to be transmitted. */
+static void start_tx(struct uart_port *port)
+{
+	if(port == &port0)
+	{
+    	schedule_work(&work0);
+	}
+	else
+	{
+    	schedule_work(&work1);
+	}
+}
+
+/* Receive stop */
+static void stop_rx(struct uart_port *port)
+{
+}
+
+/* Handle breaks - ignored by us */
+static void break_ctl(struct uart_port *port, int break_state)
+{
+}
+
+static int startup(struct uart_port *port)
+{
+	return 0;
+}
+
+static void shutdown(struct uart_port *port)
+{
+}
+
+static void set_termios(struct uart_port *port, struct ktermios *termios,
+			    struct ktermios *old)
+{
+	/* Just copy the old termios settings back */
+	if (old)
+		tty_termios_copy_hw(termios, old);
+}
+
+static const char *type(struct uart_port *port)
+{
+	return (port->type == PORT_VIRS) ? "vir-usart" : NULL;
+}
+
+static void release_port(struct uart_port *port)
+{
+}
+
+static int request_port(struct uart_port *port)
+{
+	return 0;
+}
+
+static void config_port(struct uart_port *port, int flags)
+{
+	if (flags & UART_CONFIG_TYPE)
+		port->type = PORT_VIRS;
+}
+
+static int verify_port(struct uart_port *port, struct serial_struct *ser)
+{
+	if (ser->type != PORT_UNKNOWN && ser->type != PORT_VIRS)
+		return -EINVAL;
+	return 0;
+}
+
+
+static void virtual_uart_flush_to_port(struct work_struct *work)
+{
+	struct uart_port *port;
+	struct uart_port *target_port;
+	if(work == &work0)
+	{
+		port = &port0;
+		target_port = &port1;
+	}
+	else
+	{
+		port = &port1;
+		target_port = &port0;
+	}
+
+	if (port->x_char) {
+		unsigned char ch = port->x_char;
+		port->icount.tx++;
+		port->x_char = 0;
+
+		target_port->icount.rx++;
+		if (!uart_handle_sysrq_char(target_port, ch))
+			uart_insert_char(target_port, 0, 0, ch, TTY_NORMAL);
+		tty_flip_buffer_push(&target_port->state->port);
+		return;
+	}
+
+	if (uart_circ_empty(&port->state->xmit) || uart_tx_stopped(port)) {
+		stop_tx(port);
+		return;
+	}
+
+	do {
+		unsigned char ch = port->state->xmit.buf[port->state->xmit.tail];
+		port->state->xmit.tail = (port->state->xmit.tail + 1) & (UART_XMIT_SIZE - 1);
+		port->icount.tx++;
+
+		target_port->icount.rx++;
+		if (!uart_handle_sysrq_char(target_port, ch))
+			uart_insert_char(target_port, 0, 0, ch, TTY_NORMAL);
+
+		if (uart_circ_empty(&port->state->xmit))
+			break;
+	} while (1);
+
+	tty_flip_buffer_push(&target_port->state->port);
+
+	if (uart_circ_chars_pending(&port->state->xmit) < WAKEUP_CHARS)
+		uart_write_wakeup(port);
+
+	if (uart_circ_empty(&port->state->xmit))
+		stop_tx(port);
+}
+
+static const struct uart_ops uart_ops = {
+	.tx_empty	= tx_empty,
+	.set_mctrl	= set_mctrl,
+	.get_mctrl	= get_mctrl,
+	.stop_tx	= stop_tx,
+	.start_tx	= start_tx,
+	.stop_rx	= stop_rx,
+	.break_ctl	= break_ctl,
+	.startup	= startup,
+	.shutdown	= shutdown,
+	.set_termios	= set_termios,
+	.type		= type,
+	.release_port	= release_port,
+	.request_port	= request_port,
+	.config_port	= config_port,
+	.verify_port	= verify_port,
+};
+
+
+static int init_port(struct uart_port *port,struct device *dev,unsigned int line)
+{
+	port->ops	   = &uart_ops;
+	port->dev	   = dev;
+	port->type	   = PORT_VIRS;
+	port->fifosize = 512;
+	port->line = line;
+
+	spin_lock_init(&port->lock);
+
+	return 0;
+}
+
+static struct uart_driver usart_driver = {
+	.driver_name =  "vir-usart",
+	.dev_name	 =  "ttyVIR",
+    .nr			 = 2,
+};
+
+
+static int __init usart_init(void)
+{
+	pr_info("USART driver initialized\n");
+
+    INIT_WORK(&work0, virtual_uart_flush_to_port);
+    INIT_WORK(&work1, virtual_uart_flush_to_port);
+
+
+	uart_register_driver(&usart_driver);
+
+	pdev0 = platform_device_alloc("vir-usart_dev0",0);
+	platform_device_add(pdev0);
+    init_port(&port0,&pdev0->dev,0);
+	uart_add_one_port(&usart_driver, &port0);
+
+	pdev1 = platform_device_alloc("vir-usart_dev1",1);
+	platform_device_add(pdev1);
+    init_port(&port1,&pdev1->dev,1);
+	uart_add_one_port(&usart_driver, &port1);
+
+	pr_info("USART driver initialized end\n");
+	return 0;
+}
+
+static void __exit usart_exit(void)
+{
+	pr_info("USART driver deinitialized\n");
+
+    uart_remove_one_port(&usart_driver, &port0);
+    uart_remove_one_port(&usart_driver, &port1);
+
+	platform_device_unregister(pdev0);
+	platform_device_unregister(pdev1);
+
+	uart_unregister_driver(&usart_driver);
+
+	pr_info("USART driver deinitialized end\n");
+}
+
+module_init(usart_init);
+module_exit(usart_exit);
+
+MODULE_AUTHOR("qiaoqm@aliyun.com");
+MODULE_DESCRIPTION("vir serial port driver");
+MODULE_LICENSE("GPL v2");
