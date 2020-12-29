@@ -23,7 +23,7 @@
 #include <linux/tty_flip.h>
 #include <linux/tty.h>
 
-#define PORT_VIRS 188
+#define PORT_VIRTS 188
 
 struct virtual_uart_port {
 	struct platform_device *pdev;
@@ -125,7 +125,7 @@ static void set_termios(struct uart_port *port, struct ktermios *termios,
 
 static const char *type(struct uart_port *port)
 {
-	return (port->type == PORT_VIRS) ? "vir-usart" : NULL;
+	return (port->type == PORT_VIRTS) ? "virt-usart" : NULL;
 }
 
 static void release_port(struct uart_port *port)
@@ -140,12 +140,12 @@ static int request_port(struct uart_port *port)
 static void config_port(struct uart_port *port, int flags)
 {
 	if (flags & UART_CONFIG_TYPE)
-		port->type = PORT_VIRS;
+		port->type = PORT_VIRTS;
 }
 
 static int verify_port(struct uart_port *port, struct serial_struct *ser)
 {
-	if (ser->type != PORT_UNKNOWN && ser->type != PORT_VIRS)
+	if (ser->type != PORT_UNKNOWN && ser->type != PORT_VIRTS)
 		return -EINVAL;
 	return 0;
 }
@@ -233,13 +233,13 @@ static struct virtual_uart_port *alloc_and_init_device(struct uart_driver *drive
 	struct virtual_uart_port *vport;
 	struct platform_device *pdev;
 	
-	pdev = platform_device_alloc("vir-usart_dev",id);
+	pdev = platform_device_alloc("virt-usart_dev",id);
 	platform_device_add(pdev);
     vport = devm_kzalloc(&pdev->dev, sizeof(struct virtual_uart_port), GFP_KERNEL);
 	vport->pdev = pdev;
 	vport->port.ops	     = &uart_ops;
 	vport->port.dev	     = &vport->pdev->dev;
-	vport->port.type	 = PORT_VIRS;
+	vport->port.type	 = PORT_VIRTS;
 	vport->port.fifosize = 512;
 	vport->port.line     = id;
 
@@ -265,15 +265,15 @@ static void destroy_and_deinit_port(struct virtual_uart_port *vport,struct uart_
 }
 
 static struct uart_driver usart_driver = {
-	.driver_name =  "vir-usart",
-	.dev_name	 =  "ttyVIR",
+	.driver_name =  "virt-usart",
+	.dev_name	 =  "ttyVIRT",
     .nr			 = 2,
 };
 
 
 static int __init usart_init(void)
 {
-	pr_info("vir serial port driver initialized\n");
+	pr_info("virt serial port driver initialized\n");
 
 	uart_register_driver(&usart_driver);
 	vport0 = alloc_and_init_device(&usart_driver,0);
@@ -294,5 +294,5 @@ module_init(usart_init);
 module_exit(usart_exit);
 
 MODULE_AUTHOR("qiaoqm@aliyun.com");
-MODULE_DESCRIPTION("vir serial port driver");
+MODULE_DESCRIPTION("virt serial port driver");
 MODULE_LICENSE("GPL v2");

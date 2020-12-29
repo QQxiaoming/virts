@@ -6,11 +6,11 @@ default:
 clean:
 	rm -rf .tmp_versions Module.symvers *.mod *.mod.c *.o *.ko .*.cmd built-in.a Module.markers modules.order .cache.mk
 load:
-	insmod virs.ko
+	insmod virts.ko
 unload:
-	rmmod virs
+	rmmod virts
 install:
-	cp virs.ko /lib/modules/$(shell uname -r)/kernel/drivers/virs.ko
+	cp virts.ko /lib/modules/$(shell uname -r)/kernel/drivers/virts.ko
 else
-	obj-m := virs.o
+	obj-m := virts.o
 endif
