@@ -29,6 +29,9 @@ struct virtual_uart_port {
 	struct platform_device *pdev;
     struct uart_port port;
     struct work_struct work;
+    spinlock_t lock;
+	bool tx_enable_flag;
+    bool rx_enable_flag;
 };
 
 struct virtual_uart_port *vport0;
@@ -54,18 +57,33 @@ static unsigned int get_mctrl(struct uart_port *port)
 /* Transmit stop */
 static void stop_tx(struct uart_port *port)
 {
+	struct virtual_uart_port *uart_port = container_of(port, struct virtual_uart_port, port);
+
+    uart_port->tx_enable_flag = false;
 }
 
 /* There are probably characters waiting to be transmitted. */
 static void start_tx(struct uart_port *port)
 {
     struct virtual_uart_port *uart_port = container_of(port, struct virtual_uart_port, port);
+    unsigned long flags = 0;
+
+    spin_lock_irqsave(&uart_port->lock, flags);
+    uart_port->tx_enable_flag = true;
+    spin_unlock_irqrestore(&uart_port->lock, flags);
+
     schedule_work(&uart_port->work);
 }
 
 /* Receive stop */
 static void stop_rx(struct uart_port *port)
 {
+	struct virtual_uart_port *uart_port = container_of(port, struct virtual_uart_port, port);
+    unsigned long flags = 0;
+
+    spin_lock_irqsave(&uart_port->lock, flags);
+    uart_port->rx_enable_flag = false;
+    spin_unlock_irqrestore(&uart_port->lock, flags);
 }
 
 /* Handle breaks - ignored by us */
@@ -75,11 +93,26 @@ static void break_ctl(struct uart_port *port, int break_state)
 
 static int startup(struct uart_port *port)
 {
+	struct virtual_uart_port *uart_port = container_of(port, struct virtual_uart_port, port);
+    unsigned long flags = 0;
+
+    spin_lock_irqsave(&uart_port->lock, flags);
+    uart_port->rx_enable_flag = true;
+    uart_port->tx_enable_flag = true;
+    spin_unlock_irqrestore(&uart_port->lock, flags);
+
 	return 0;
 }
 
 static void shutdown(struct uart_port *port)
 {
+	struct virtual_uart_port *uart_port = container_of(port, struct virtual_uart_port, port);
+    unsigned long flags = 0;
+
+    spin_lock_irqsave(&uart_port->lock, flags);
+    uart_port->rx_enable_flag = false;
+    uart_port->tx_enable_flag = false;
+    spin_unlock_irqrestore(&uart_port->lock, flags);
 }
 
 static void set_termios(struct uart_port *port, struct ktermios *termios,
@@ -118,22 +151,28 @@ static int verify_port(struct uart_port *port, struct serial_struct *ser)
 }
 
 
-static void virtual_uart_flush_to_port(struct work_struct *work)
+static void transmission_data(struct work_struct *work)
 {
     struct virtual_uart_port *uart_port = container_of(work, struct virtual_uart_port, work);
 	struct virtual_uart_port *target_vport = platform_get_drvdata(uart_port->pdev);
 	struct uart_port *port = &uart_port->port;
 	struct uart_port *target_port = &target_vport->port;
-	
+	unsigned long flags = 0;
+
 	if (port->x_char) {
 		unsigned char ch = port->x_char;
 		port->icount.tx++;
 		port->x_char = 0;
 
-		target_port->icount.rx++;
-		if (!uart_handle_sysrq_char(target_port, ch))
-			uart_insert_char(target_port, 0, 0, ch, TTY_NORMAL);
-		tty_flip_buffer_push(&target_port->state->port);
+    	spin_lock_irqsave(&target_vport->lock, flags);
+		if(target_vport->rx_enable_flag)
+		{
+			target_port->icount.rx++;
+			if (!uart_handle_sysrq_char(target_port, ch))
+				uart_insert_char(target_port, 0, 0, ch, TTY_NORMAL);
+			tty_flip_buffer_push(&target_port->state->port);
+		}
+    	spin_unlock_irqrestore(&target_vport->lock, flags);
 		return;
 	}
 
@@ -142,21 +181,27 @@ static void virtual_uart_flush_to_port(struct work_struct *work)
 		return;
 	}
 
+    spin_lock_irqsave(&target_vport->lock, flags);
 	do {
 		unsigned char ch = port->state->xmit.buf[port->state->xmit.tail];
 		port->state->xmit.tail = (port->state->xmit.tail + 1) & (UART_XMIT_SIZE - 1);
 		port->icount.tx++;
 
-		target_port->icount.rx++;
-		if (!uart_handle_sysrq_char(target_port, ch))
-			uart_insert_char(target_port, 0, 0, ch, TTY_NORMAL);
-
+		if(target_vport->rx_enable_flag)
+		{
+			target_port->icount.rx++;
+			if (!uart_handle_sysrq_char(target_port, ch))
+				uart_insert_char(target_port, 0, 0, ch, TTY_NORMAL);
+		}
+		
 		if (uart_circ_empty(&port->state->xmit))
 			break;
 	} while (1);
 
-	tty_flip_buffer_push(&target_port->state->port);
-
+	if(target_vport->rx_enable_flag)
+		tty_flip_buffer_push(&target_port->state->port);
+    spin_unlock_irqrestore(&target_vport->lock, flags);
+	
 	if (uart_circ_chars_pending(&port->state->xmit) < WAKEUP_CHARS)
 		uart_write_wakeup(port);
 
@@ -198,8 +243,8 @@ static struct virtual_uart_port *alloc_and_init_device(struct uart_driver *drive
 	vport->port.fifosize = 512;
 	vport->port.line     = id;
 
-	spin_lock_init(&vport->port.lock);
-   	INIT_WORK(&vport->work, virtual_uart_flush_to_port);
+    spin_lock_init(&vport->lock);
+   	INIT_WORK(&vport->work, transmission_data);
 
 	uart_add_one_port(driver, &vport->port);
     platform_set_drvdata(vport->pdev, NULL);
@@ -228,26 +273,21 @@ static struct uart_driver usart_driver = {
 
 static int __init usart_init(void)
 {
-	pr_info("USART driver initialized\n");
+	pr_info("vir serial port driver initialized\n");
 
 	uart_register_driver(&usart_driver);
 	vport0 = alloc_and_init_device(&usart_driver,0);
 	vport1 = alloc_and_init_device(&usart_driver,1);
 	link_dev_port(vport0,vport1);
 
-	pr_info("USART driver initialized end\n");
 	return 0;
 }
 
 static void __exit usart_exit(void)
 {
-	pr_info("USART driver deinitialized\n");
-
     destroy_and_deinit_port(vport0, &usart_driver);
     destroy_and_deinit_port(vport1, &usart_driver);
 	uart_unregister_driver(&usart_driver);
-
-	pr_info("USART driver deinitialized end\n");
 }
 
 module_init(usart_init);
