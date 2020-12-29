@@ -25,13 +25,14 @@
 
 #define PORT_VIRS 188
 
+struct virtual_uart_port {
+	struct platform_device *pdev;
+    struct uart_port port;
+    struct work_struct work;
+};
 
-struct platform_device *pdev0;
-struct platform_device *pdev1;
-static struct uart_port port0;
-static struct uart_port port1;
-struct work_struct work0;
-struct work_struct work1;
+struct virtual_uart_port *vport0;
+struct virtual_uart_port *vport1;
 
 static unsigned int tx_empty(struct uart_port *port)
 {
@@ -58,14 +59,8 @@ static void stop_tx(struct uart_port *port)
 /* There are probably characters waiting to be transmitted. */
 static void start_tx(struct uart_port *port)
 {
-	if(port == &port0)
-	{
-    	schedule_work(&work0);
-	}
-	else
-	{
-    	schedule_work(&work1);
-	}
+    struct virtual_uart_port *uart_port = container_of(port, struct virtual_uart_port, port);
+    schedule_work(&uart_port->work);
 }
 
 /* Receive stop */
@@ -125,19 +120,11 @@ static int verify_port(struct uart_port *port, struct serial_struct *ser)
 
 static void virtual_uart_flush_to_port(struct work_struct *work)
 {
-	struct uart_port *port;
-	struct uart_port *target_port;
-	if(work == &work0)
-	{
-		port = &port0;
-		target_port = &port1;
-	}
-	else
-	{
-		port = &port1;
-		target_port = &port0;
-	}
-
+    struct virtual_uart_port *uart_port = container_of(work, struct virtual_uart_port, work);
+	struct virtual_uart_port *target_vport = platform_get_drvdata(uart_port->pdev);
+	struct uart_port *port = &uart_port->port;
+	struct uart_port *target_port = &target_vport->port;
+	
 	if (port->x_char) {
 		unsigned char ch = port->x_char;
 		port->icount.tx++;
@@ -196,17 +183,40 @@ static const struct uart_ops uart_ops = {
 };
 
 
-static int init_port(struct uart_port *port,struct device *dev,unsigned int line)
+static struct virtual_uart_port *alloc_and_init_device(struct uart_driver *driver, unsigned int id)
 {
-	port->ops	   = &uart_ops;
-	port->dev	   = dev;
-	port->type	   = PORT_VIRS;
-	port->fifosize = 512;
-	port->line = line;
+	struct virtual_uart_port *vport;
+	struct platform_device *pdev;
+	
+	pdev = platform_device_alloc("vir-usart_dev",id);
+	platform_device_add(pdev);
+    vport = devm_kzalloc(&pdev->dev, sizeof(struct virtual_uart_port), GFP_KERNEL);
+	vport->pdev = pdev;
+	vport->port.ops	     = &uart_ops;
+	vport->port.dev	     = &vport->pdev->dev;
+	vport->port.type	 = PORT_VIRS;
+	vport->port.fifosize = 512;
+	vport->port.line     = id;
 
-	spin_lock_init(&port->lock);
+	spin_lock_init(&vport->port.lock);
+   	INIT_WORK(&vport->work, virtual_uart_flush_to_port);
 
-	return 0;
+	uart_add_one_port(driver, &vport->port);
+    platform_set_drvdata(vport->pdev, NULL);
+
+	return vport;
+}
+
+static void link_dev_port(struct virtual_uart_port *vport0,struct virtual_uart_port *vport1)
+{
+    platform_set_drvdata(vport0->pdev, vport1);
+    platform_set_drvdata(vport1->pdev, vport0);
+}
+
+static void destroy_and_deinit_port(struct virtual_uart_port *vport,struct uart_driver *driver)
+{
+    uart_remove_one_port(driver, &vport->port);
+	platform_device_unregister(vport->pdev);
 }
 
 static struct uart_driver usart_driver = {
@@ -220,21 +230,10 @@ static int __init usart_init(void)
 {
 	pr_info("USART driver initialized\n");
 
-    INIT_WORK(&work0, virtual_uart_flush_to_port);
-    INIT_WORK(&work1, virtual_uart_flush_to_port);
-
-
 	uart_register_driver(&usart_driver);
-
-	pdev0 = platform_device_alloc("vir-usart_dev0",0);
-	platform_device_add(pdev0);
-    init_port(&port0,&pdev0->dev,0);
-	uart_add_one_port(&usart_driver, &port0);
-
-	pdev1 = platform_device_alloc("vir-usart_dev1",1);
-	platform_device_add(pdev1);
-    init_port(&port1,&pdev1->dev,1);
-	uart_add_one_port(&usart_driver, &port1);
+	vport0 = alloc_and_init_device(&usart_driver,0);
+	vport1 = alloc_and_init_device(&usart_driver,1);
+	link_dev_port(vport0,vport1);
 
 	pr_info("USART driver initialized end\n");
 	return 0;
@@ -244,12 +243,8 @@ static void __exit usart_exit(void)
 {
 	pr_info("USART driver deinitialized\n");
 
-    uart_remove_one_port(&usart_driver, &port0);
-    uart_remove_one_port(&usart_driver, &port1);
-
-	platform_device_unregister(pdev0);
-	platform_device_unregister(pdev1);
-
+    destroy_and_deinit_port(vport0, &usart_driver);
+    destroy_and_deinit_port(vport1, &usart_driver);
 	uart_unregister_driver(&usart_driver);
 
 	pr_info("USART driver deinitialized end\n");
