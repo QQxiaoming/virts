@@ -1,25 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/clk.h>
-#include <linux/kthread.h>
-#include <linux/console.h>
-#include <linux/delay.h>
-#include <linux/dma-direction.h>
-#include <linux/dmaengine.h>
-#include <linux/dma-mapping.h>
-#include <linux/io.h>
-#include <linux/iopoll.h>
-#include <linux/irq.h>
 #include <linux/module.h>
-#include <linux/of.h>
-#include <linux/of_platform.h>
-#include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
-#include <linux/pm_runtime.h>
-#include <linux/pm_wakeirq.h>
 #include <linux/serial_core.h>
 #include <linux/serial.h>
-#include <linux/spinlock.h>
-#include <linux/sysrq.h>
 #include <linux/tty_flip.h>
 #include <linux/tty.h>
 
