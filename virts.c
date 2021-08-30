@@ -34,8 +34,7 @@ struct virtual_uart_port {
     bool rx_enable_flag;
 };
 
-struct virtual_uart_port *vport0;
-struct virtual_uart_port *vport1;
+static struct virtual_uart_port *vport[2];
 
 static unsigned int tx_empty(struct uart_port *port)
 {
@@ -276,17 +275,17 @@ static int __init usart_init(void)
 	pr_info("virt serial port driver initialized\n");
 
 	uart_register_driver(&usart_driver);
-	vport0 = alloc_and_init_device(&usart_driver,0);
-	vport1 = alloc_and_init_device(&usart_driver,1);
-	link_dev_port(vport0,vport1);
+	vport[0] = alloc_and_init_device(&usart_driver,0);
+	vport[1] = alloc_and_init_device(&usart_driver,1);
+	link_dev_port(vport[0],vport[1]);
 
 	return 0;
 }
 
 static void __exit usart_exit(void)
 {
-    destroy_and_deinit_port(vport0, &usart_driver);
-    destroy_and_deinit_port(vport1, &usart_driver);
+    destroy_and_deinit_port(vport[0], &usart_driver);
+    destroy_and_deinit_port(vport[1], &usart_driver);
 	uart_unregister_driver(&usart_driver);
 }
 
