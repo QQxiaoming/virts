@@ -1,4 +1,4 @@
-[![CI](https://https://github.com/QQxiaoming/virts/actions/workflows/ci.yml/badge.svg?branch=main)](https://https://github.com/QQxiaoming/virts/actions/workflows/ci.yml)
+[![CI](https://github.com/QQxiaoming/virts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/QQxiaoming/virts/actions/workflows/ci.yml)
 
 # virts
 
