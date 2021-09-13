@@ -1,3 +1,5 @@
+[![CI](https://https://github.com/QQxiaoming/virts/actions/workflows/ci.yml/badge.svg?branch=main)](https://https://github.com/QQxiaoming/virts/actions/workflows/ci.yml)
+
 # virts
 
 ## 介绍
