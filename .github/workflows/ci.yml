@@ -25,7 +25,7 @@ jobs:
       - name: Install prerequisites
         run: |
           sudo apt update
-          sudo apt install -y make gcc linux-headers-$(shell uname -r)
+          sudo apt install -y make gcc
 
       - name: Build all
         run: |
