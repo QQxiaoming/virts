@@ -33,4 +33,4 @@ jobs:
 
       - name: Run tests
         run: |
-          if ls ./ | grep "virts.ko" ; then echo "Pass"; else echo "Failed" && exit 1; fi; 
+          if ls ./ | grep "virts.ko" ; then echo "Pass"; else echo "Failed" && exit 1; fi;

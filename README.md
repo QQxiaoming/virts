@@ -1,4 +1,5 @@
 [![CI](https://github.com/QQxiaoming/virts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/QQxiaoming/virts/actions/workflows/ci.yml)
+[![CodeFactor](https://www.codefactor.io/repository/github/qqxiaoming/virts/badge)](https://www.codefactor.io/repository/github/qqxiaoming/virts)
 
 # virts
 
