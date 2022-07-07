@@ -3,20 +3,20 @@
 
 # virts
 
-English | [简体中文](./README_zh_CN.md)
+[English](./README.md) | 简体中文
 
-## Introduction
+## 介绍
 
-This is a software-simulated serial port ttyVIRT device driver. After loading the driver, two devices, /dev/ttyVIRT0 and /dev/ttyVIRT1, will be generated. Different applications can open these two serial devices to communicate with each other.
+这是一个软件模拟的串口ttyVIRT设备驱动，加载驱动后，会产生/dev/ttyVIRT0和/dev/ttyVIRT1两个设备，不同的应用程序分别打开这两个串口设备可以互相通信。
 
-## Install
+## 安装
 
 ```shell
 make
 make load
 ```
 
-## Uninstall
+## 卸载
 
 ```shell
 make unload
