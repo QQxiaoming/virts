@@ -98,7 +98,7 @@ static void shutdown(struct uart_port *port)
 }
 
 static void set_termios(struct uart_port *port, struct ktermios *termios,
-			    struct ktermios *old)
+			    const struct ktermios *old)
 {
 	/* Just copy the old termios settings back */
 	if (old)
